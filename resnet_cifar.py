@@ -15,7 +15,7 @@ parser.add_argument('--train_batch_size', type=int, default=64)
 parser.add_argument('--eval_batch_size', type=int, default=128)
 parser.add_argument('--metrics_epoch_frequency', type=int, default=1)
 parser.add_argument('--epochs', type=int, default=60)
-parser.add_argument('--lr', type=float, default=1e-4)
+parser.add_argument('--lr', type=float, default=1e-3)
 parser.add_argument('--weight_decay', type=float, default=5e-4)
 
 parser.add_argument('--patience', type=int, default=0)
@@ -39,7 +39,6 @@ parser.add_argument('--use_test', action="store_true")
 args = parser.parse_args()
 
 device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
-
 
 run_name = f"{args.method}"
 if args.method == 'gamblers':
