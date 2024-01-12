@@ -1,0 +1,155 @@
+wandb_version: 1
+
+train_batch_size:
+  desc: null
+  value: 64
+eval_batch_size:
+  desc: null
+  value: 128
+metrics_epoch_frequency:
+  desc: null
+  value: 1
+epochs:
+  desc: null
+  value: 60
+lr:
+  desc: null
+  value: 0.001
+weight_decay:
+  desc: null
+  value: 0.0005
+patience:
+  desc: null
+  value: 0
+eval_confidence_threshold:
+  desc: null
+  value:
+  - 0.9
+  - 0.8
+  - 0.7
+  - 0.6
+  - 0.5
+  - 0.4
+  - 0.3
+  - 0.2
+  - 0.1
+  - 0.0
+coverage:
+  desc: null
+  value:
+  - 100.0
+  - 99.0
+  - 98.0
+  - 97.0
+  - 95.0
+  - 90.0
+  - 85.0
+  - 80.0
+  - 75.0
+  - 70.0
+  - 60.0
+  - 50.0
+  - 40.0
+  - 30.0
+  - 20.0
+  - 10.0
+pretrain_epochs:
+  desc: null
+  value: 0
+method:
+  desc: null
+  value: none
+gamblers_temperature:
+  desc: null
+  value: 7
+use_test:
+  desc: null
+  value: false
+_wandb:
+  desc: null
+  value:
+    python_version: 3.10.0
+    cli_version: 0.16.1
+    framework: torch
+    is_jupyter_run: false
+    is_kaggle_kernel: false
+    start_time: 1705085615.122614
+    t:
+      1:
+      - 1
+      - 41
+      - 55
+      2:
+      - 1
+      - 41
+      - 55
+      3:
+      - 13
+      - 15
+      - 16
+      - 23
+      4: 3.10.0
+      5: 0.16.1
+      8:
+      - 3
+      - 5
+      13: windows-amd64
+    visualize:
+      valid_confidence/confidence_0:
+        panel_type: Vega2
+        panel_config:
+          panelDefId: wandb/histogram/v0
+          fieldSettings:
+            value: confidence
+          stringSettings:
+            title: Valid confidence epoch 0
+          transform:
+            name: tableWithLeafColNames
+          userQuery:
+            queryFields:
+            - name: runSets
+              args:
+              - name: runSets
+                value: ${runSets}
+              fields:
+              - name: id
+                fields: []
+              - name: name
+                fields: []
+              - name: _defaultColorIndex
+                fields: []
+              - name: summaryTable
+                args:
+                - name: tableKey
+                  value: valid_confidence/confidence_0_table
+                fields: []
+      valid_coverage:
+        panel_type: Vega2
+        panel_config:
+          panelDefId: wandb/line/v0
+          fieldSettings:
+            x: coverage
+            y: acc
+            stroke: null
+          stringSettings:
+            title: Valid Coverage
+          transform:
+            name: tableWithLeafColNames
+          userQuery:
+            queryFields:
+            - name: runSets
+              args:
+              - name: runSets
+                value: ${runSets}
+              fields:
+              - name: id
+                fields: []
+              - name: name
+                fields: []
+              - name: _defaultColorIndex
+                fields: []
+              - name: summaryTable
+                args:
+                - name: tableKey
+                  value: valid_coverage_table
+                fields: []
