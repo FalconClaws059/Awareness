@@ -7,46 +7,81 @@ import wandb
 from utils import (EarlyStopping, GamblersLoss, compute_dataset_confidences_predictions, evaluate_coverage,
                    evaluate_with_threshold, evaluate_calibration)
 from tqdm import tqdm
+from create_iterable import cartesian_product_itertools
 
+train_batch_size = [64, 128]
+eval_batch_size = [256]
+metrics_epoch_frequency = [1]
+epochs = [60]
+lr = [1e-4, 1e-3, 1e-2, 5e-4]
+weight_decay = [5e-5, 5e-4, 5e-3]
+patience = [0]
+eval_confidence_threshold = [0]
+coverage = [0]
+pretrain_epochs = [0]
+method = ['none']
+gamblers_temperature = [7]
+use_test = [False]
 
-# generate code to transform the parameters above in input argument with argparse library
-parser = argparse.ArgumentParser()
-parser.add_argument('--train_batch_size', type=int, default=64)
-parser.add_argument('--eval_batch_size', type=int, default=128)
-parser.add_argument('--metrics_epoch_frequency', type=int, default=1)
-parser.add_argument('--epochs', type=int, default=60)
-parser.add_argument('--lr', type=float, default=1e-3)
-parser.add_argument('--weight_decay', type=float, default=5e-4)
+combos = cartesian_product_itertools(train_batch_size, eval_batch_size, metrics_epoch_frequency, epochs,lr,weight_decay,patience, eval_confidence_threshold, coverage, pretrain_epochs, method, gamblers_temperature, use_test)
 
-parser.add_argument('--patience', type=int, default=0)
+for combo in combos: 
+        # Define custom default variables
+    custom_defaults = {
+        'train_batch_size': combo[0],
+        'eval_batch_size': combo[1], 
+        'metrics_epoch_frequency': combo[2], 
+        'epochs': combo[3],
+        'lr': combo[4],
+        'weight_decay': combo[5],
+        'patience': combo[6], 
+        'eval_confidence_threshold': [0.90,0.80,0.70,0.60,0.50,0.40,0.30,0.20,0.10, 0.0], 
+        'coverage': [100.,99.,98.,97.,95.,90.,85.,80.,75.,70.,60.,50.,40.,30.,20.,10.], 
+        'pretrain_epochs': combo[9], 
+        'method': combo[10], 
+        'gamblers_temperature': combo[11], 
+        'use_test': combo[12]
+    }
 
-parser.add_argument('--eval_confidence_threshold', type=float, nargs='+',
-                    default=[0.90,0.80,0.70,0.60,0.50,0.40,0.30,0.20,0.10, 0.0],
-                    help='use during evaluation to filter out examples where the model is not confident enough')
+    # generate code to transform the parameters above in input argument with argparse library
+    parser = argparse.ArgumentParser()
+    parser.add_argument('--train_batch_size', type=int, default=custom_defaults['train_batch_size'])
+    parser.add_argument('--eval_batch_size', type=int, default=custom_defaults['eval_batch_size'])
+    parser.add_argument('--metrics_epoch_frequency', type=int, default=custom_defaults['metrics_epoch_frequency'])
+    parser.add_argument('--epochs', type=int, default=custom_defaults['epochs'])
+    parser.add_argument('--lr', type=float, default=custom_defaults['lr'])
+    parser.add_argument('--weight_decay', type=float, default=custom_defaults['weight_decay'])
 
-parser.add_argument('--coverage', type=float, nargs='+',
-                    default=[100.,99.,98.,97.,95.,90.,85.,80.,75.,70.,60.,50.,40.,30.,20.,10.],
-                    help='the expected coverages used to evaluated the accuracies after abstention')
+    parser.add_argument('--patience', type=int, default=custom_defaults['patience'])
 
-parser.add_argument('--pretrain_epochs', type=int, default=0)
+    parser.add_argument('--eval_confidence_threshold', type=float, nargs='+',
+                        default=custom_defaults['eval_confidence_threshold'],
+                        help='use during evaluation to filter out examples where the model is not confident enough')
 
-parser.add_argument('--method', type=str, choices=['none', 'gamblers'], default='none')
-parser.add_argument('--gamblers_temperature', type=float, default=7,
-                    help='temperature for the gamblers loss (o in the original paper). '
-                         'This should be >1 and <= number of classes')
+    parser.add_argument('--coverage', type=float, nargs='+',
+                        default=custom_defaults['coverage'],
+                        help='the expected coverages used to evaluated the accuracies after abstention')
 
-parser.add_argument('--use_test', action="store_true")
-args = parser.parse_args()
+    parser.add_argument('--pretrain_epochs', type=int, default=custom_defaults['pretrain_epochs'])
 
-device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
+    parser.add_argument('--method', type=str, choices=['none', 'gamblers'], default=custom_defaults['method'])
+    parser.add_argument('--gamblers_temperature', type=float, default=custom_defaults['gamblers_temperature'],
+                        help='temperature for the gamblers loss (o in the original paper). '
+                            'This should be >1 and <= number of classes')
+
+    parser.add_argument('--use_test', type=bool, default=custom_defaults['use_test'])
+    args = parser.parse_args()
+
+    device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
 
 
 run_name = f"{args.method}"
 if args.method == 'gamblers':
     run_name += f"_temp{args.gamblers_temperature}"
+run_name += f"_lr{args.lr}"
 
 wandb.init(
-    project="awareness",
+    project="modelSelectionNone",
     config=vars(args),
     name='cifar100_'+run_name,
     tags=['resnet101']
