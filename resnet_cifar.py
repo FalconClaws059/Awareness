@@ -8,20 +8,24 @@ from utils import (EarlyStopping, GamblersLoss, compute_dataset_confidences_pred
                    evaluate_with_threshold, evaluate_calibration)
 from tqdm import tqdm
 from create_iterable import cartesian_product_itertools
+from resnet import resnet110
 
-train_batch_size = [64, 128]
+train_batch_size = [128]
 eval_batch_size = [256]
 metrics_epoch_frequency = [1]
-epochs = [60]
-lr = [1e-4, 1e-3, 1e-2, 5e-4]
-weight_decay = [5e-5, 5e-4, 5e-3]
+epochs = [120]
+lr = [1e-5]
+weight_decay = [1e-5]
 patience = [0]
 eval_confidence_threshold = [0]
 coverage = [0]
-pretrain_epochs = [0]
-method = ['none']
-gamblers_temperature = [7]
+pretrain_epochs = [30]
+method = ['gamblers']
+gamblers_temperature = [70]
 use_test = [False]
+load_model = False
+save_model = False
+model_to_load = ""
 
 combos = cartesian_product_itertools(train_batch_size, eval_batch_size, metrics_epoch_frequency, epochs,lr,weight_decay,patience, eval_confidence_threshold, coverage, pretrain_epochs, method, gamblers_temperature, use_test)
 
@@ -75,137 +79,149 @@ for combo in combos:
     device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
 
 
-run_name = f"{args.method}"
-if args.method == 'gamblers':
-    run_name += f"_temp{args.gamblers_temperature}"
-run_name += f"_lr{args.lr}"
+    run_name = f"{args.method}"
+    if args.method == 'gamblers':
+        run_name += f"_temp{args.gamblers_temperature}"
+        
+    run_name += f"_lr{args.lr}"
+    run_name += f"_wd{args.weight_decay}"
+    run_name += f"_tbs{args.train_batch_size}"
 
-wandb.init(
-    project="modelSelectionNone",
-    config=vars(args),
-    name='cifar100_'+run_name,
-    tags=['resnet101']
-)
-
-num_classes = 100
-
-model = resnet101(weights=None, num_classes=num_classes+int(args.method == 'gamblers')).to(device)
+    if args.method == 'gamblers':
+        run_name += f"_temp{args.pretrain_epochs}"
 
 
-transform_train = Compose([
-    RandomCrop(32, padding=4),
-    RandomHorizontalFlip(),
-    ToTensor(),
-    Normalize((0.5071, 0.4867, 0.4408), (0.2675, 0.2565, 0.2761)),
-])
+    wandb.init(
+        project="awareness",
+        config=vars(args),
+        name='cifar100_'+run_name,
+        tags=[f"{args.method}"]
+    )
 
-transform_test = Compose([
-    ToTensor(),
-    Normalize( (0.5071, 0.4867, 0.4408), (0.2675, 0.2565, 0.2761)),
-])
+    num_classes = 100
 
-train_dataset = CIFAR100(root='/raid/a.cossu/datasets', train=True, download=True,
-                        transform=transform_train)
-test_dataset = CIFAR100(root='/raid/a.cossu/datasets', train=False, download=True,
-                       transform=transform_test)
+    model = resnet101(weights=None, num_classes=num_classes+int(args.method == 'gamblers')).to(device)
+    # model = resnet110().to(device);
 
-train_dataset, valid_dataset = torch.utils.data.random_split(train_dataset, [0.7, 0.3])
+    transform_train = Compose([
+        RandomCrop(32, padding=4),
+        RandomHorizontalFlip(),
+        ToTensor(),
+        Normalize((0.5071, 0.4867, 0.4408), (0.2675, 0.2565, 0.2761)),
+    ])
 
-train_loader = torch.utils.data.DataLoader(train_dataset,
-                                           batch_size=args.train_batch_size,
-                                           shuffle=True,
-                                           drop_last=False)
-valid_loader = torch.utils.data.DataLoader(valid_dataset,
-                                           batch_size=args.eval_batch_size,
-                                           shuffle=False,
-                                           drop_last=False)
-test_loader = torch.utils.data.DataLoader(test_dataset,
-                                          batch_size=args.eval_batch_size,
-                                          shuffle=False,
-                                          drop_last=False)
+    transform_test = Compose([
+        ToTensor(),
+        Normalize( (0.5071, 0.4867, 0.4408), (0.2675, 0.2565, 0.2761)),
+    ])
 
-optimizer = torch.optim.SGD(model.parameters(), lr=args.lr, momentum=0.9, weight_decay=args.weight_decay)
-lr = args.lr
+    train_dataset = CIFAR100(root='/raid/a.cossu/datasets', train=True, download=True,
+                            transform=transform_train)
+    test_dataset = CIFAR100(root='/raid/a.cossu/datasets', train=False, download=True,
+                        transform=transform_test)
 
-if args.method == 'gamblers':
-    train_criterion = GamblersLoss(args.gamblers_temperature)
-elif args.method == 'none':
-    train_criterion = torch.nn.CrossEntropyLoss()
-else:
-    raise ValueError("Wrong method name.")
-pretrain_criterion = torch.nn.CrossEntropyLoss()
+    train_dataset, valid_dataset = torch.utils.data.random_split(train_dataset, [0.7, 0.3])
 
-if args.patience > 0:
-    stopping = EarlyStopping(mode='max', patience=args.patience)
+    train_loader = torch.utils.data.DataLoader(train_dataset,
+                                            batch_size=args.train_batch_size,
+                                            shuffle=True,
+                                            drop_last=False)
+    valid_loader = torch.utils.data.DataLoader(valid_dataset,
+                                            batch_size=args.eval_batch_size,
+                                            shuffle=False,
+                                            drop_last=False)
+    test_loader = torch.utils.data.DataLoader(test_dataset,
+                                            batch_size=args.eval_batch_size,
+                                            shuffle=False,
+                                            drop_last=False)
 
-for epoch in range(args.epochs):
-    train_loss, train_acc = 0., 0.
-    model.train()
-    for i, (x, y) in enumerate(tqdm(train_loader)):
-        x, y = x.to(device), y.to(device)
-        optimizer.zero_grad()
-        out = model(x)
+    optimizer = torch.optim.SGD(model.parameters(), lr=args.lr, momentum=0.9, weight_decay=args.weight_decay)
+    lr = args.lr
 
-        if args.pretrain_epochs > epoch:
-            loss = pretrain_criterion(out[:, :num_classes], y)
-        else:
-            loss = train_criterion(out, y)
-        loss.backward()
-        optimizer.step()
-        train_loss += loss.item()
-        train_acc += (out[:, :num_classes].argmax(dim=-1) == y).sum().item() / float(x.shape[0])
+    if args.method == 'gamblers':
+        train_criterion = GamblersLoss(args.gamblers_temperature)
+    elif args.method == 'none':
+        train_criterion = torch.nn.CrossEntropyLoss()
+    else:
+        raise ValueError("Wrong method name.")
+    pretrain_criterion = torch.nn.CrossEntropyLoss()
 
-    train_acc /= float(len(train_loader))
-    train_loss /= float(len(train_loader))
-    wandb.log({"train/acc": train_acc, "train/loss": train_loss}, commit=False)
+    if args.patience > 0:
+        stopping = EarlyStopping(mode='max', patience=args.patience)
 
-    if args.pretrain_epochs <= epoch and (epoch+1) % args.metrics_epoch_frequency == 0:
-        confidences, predictions, losses = compute_dataset_confidences_predictions(model, args.method, valid_loader, train_criterion, device)
+    if(load_model):
+        model = torch.load(model_to_load)
+    else:
+        for epoch in range(args.epochs):
+            train_loss, train_acc = 0., 0.
+            model.train()
+            for i, (x, y) in enumerate(tqdm(train_loader)):
+                x, y = x.to(device), y.to(device)
+                optimizer.zero_grad()
+                out = model(x)
+
+                if args.pretrain_epochs > epoch:
+                    loss = pretrain_criterion(out[:, :num_classes], y)
+                else:
+                    loss = train_criterion(out, y)
+                loss.backward()
+                optimizer.step()
+                train_loss += loss.item()
+                train_acc += (out[:, :num_classes].argmax(dim=-1) == y).sum().item() / float(x.shape[0])
+
+            train_acc /= float(len(train_loader))
+            train_loss /= float(len(train_loader))
+            wandb.log({"train/acc": train_acc, "train/loss": train_loss}, commit=False)
+
+            if args.pretrain_epochs <= epoch and (epoch+1) % args.metrics_epoch_frequency == 0:
+                confidences, predictions, losses = compute_dataset_confidences_predictions(model, args.method, valid_loader, train_criterion, device)
+                table = wandb.Table(data=[[s] for s in confidences.cpu().numpy().tolist()], columns=["confidence"])
+                wandb.log({f"valid_confidence/confidence_{epoch}": wandb.plot.histogram(table, "confidence", title=f"Valid confidence epoch {epoch}")},
+                        commit=False)
+                for conf in args.eval_confidence_threshold:
+                    valid_acc, valid_loss, num_predictions = evaluate_with_threshold(confidences, predictions, losses, confidence_threshold=conf)
+                    wandb.log({f"valid{conf}/acc": valid_acc,
+                            f"valid{conf}/loss": valid_loss,
+                            f"valid{conf}/num_predictions": num_predictions,
+                            f"valid{conf}/perc_predictions": 100 * (num_predictions / float(len(valid_dataset)))}, commit=False)
+                    if conf == 0.0 and args.patience > 0:
+                        stopping.update(valid_acc)
+
+                coverages = evaluate_coverage(confidences, predictions, args.coverage)
+                coverages_table = wandb.Table(data=[[x, y] for x, y in coverages.items()], columns=["coverage", "acc"])
+                wandb.log({f"valid_coverage": wandb.plot.line(coverages_table, "coverage", "acc", title=f"Valid Coverage")}, commit=False)
+
+                calibration = evaluate_calibration(confidences, predictions, bins=args.eval_confidence_threshold)
+                wandb.log({"valid_calibration": calibration}, commit=False)
+
+            wandb.log({"epoch": epoch})
+
+            if args.patience > 0 and stopping.stopped:
+                print("Stopping training after epoch ", epoch+1)
+                break
+
+    if args.use_test:
+        confidences, predictions, losses = compute_dataset_confidences_predictions(model, args.method, test_loader, train_criterion, device)
         table = wandb.Table(data=[[s] for s in confidences.cpu().numpy().tolist()], columns=["confidence"])
-        wandb.log({f"valid_confidence/confidence_{epoch}": wandb.plot.histogram(table, "confidence", title=f"Valid confidence epoch {epoch}")},
-                  commit=False)
-        for conf in args.eval_confidence_threshold:
-            valid_acc, valid_loss, num_predictions = evaluate_with_threshold(confidences, predictions, losses, confidence_threshold=conf)
-            wandb.log({f"valid{conf}/acc": valid_acc,
-                       f"valid{conf}/loss": valid_loss,
-                       f"valid{conf}/num_predictions": num_predictions,
-                       f"valid{conf}/perc_predictions": 100 * (num_predictions / float(len(valid_dataset)))}, commit=False)
-            if conf == 0.0 and args.patience > 0:
-                stopping.update(valid_acc)
+        wandb.log({f"test_confidence/confidence": wandb.plot.histogram(table, "confidence", title=f"Test confidence")}, commit=False)
 
         coverages = evaluate_coverage(confidences, predictions, args.coverage)
         coverages_table = wandb.Table(data=[[x, y] for x, y in coverages.items()], columns=["coverage", "acc"])
-        wandb.log({f"valid_coverage": wandb.plot.line(coverages_table, "coverage", "acc", title=f"Valid Coverage")}, commit=False)
+        wandb.log({f"test_coverage/test_coverage": wandb.plot.line(coverages_table, "coverage", "acc",
+                                                                title=f"Test Coverage")}, commit=False)
+
+        for conf in args.eval_confidence_threshold:
+            test_acc, test_loss, num_predictions = evaluate_with_threshold(confidences, predictions, losses, confidence_threshold=conf)
+            wandb.log({f"test_{conf}/acc": test_acc,
+                    f"test{conf}/loss": valid_loss,
+                    f"test_{conf}/num_predictions": num_predictions,
+                    f"test_{conf}/perc_predictions": 100 * (num_predictions / float(len(valid_dataset)))},
+                    commit=False)
 
         calibration = evaluate_calibration(confidences, predictions, bins=args.eval_confidence_threshold)
-        wandb.log({"valid_calibration": calibration}, commit=False)
+        wandb.log({"test_calibration": calibration})
 
-    wandb.log({"epoch": epoch})
+    if(save_model):
+        torch.save(model.state_dict(), 'model'+run_name+'.pth')
 
-    if args.patience > 0 and stopping.stopped:
-        print("Stopping training after epoch ", epoch+1)
-        break
-
-if args.use_test:
-    confidences, predictions, losses = compute_dataset_confidences_predictions(model, args.method, test_loader, train_criterion, device)
-    table = wandb.Table(data=[[s] for s in confidences.cpu().numpy().tolist()], columns=["confidence"])
-    wandb.log({f"test_confidence/confidence": wandb.plot.histogram(table, "confidence", title=f"Test confidence")}, commit=False)
-
-    coverages = evaluate_coverage(confidences, predictions, args.coverage)
-    coverages_table = wandb.Table(data=[[x, y] for x, y in coverages.items()], columns=["coverage", "acc"])
-    wandb.log({f"test_coverage/test_coverage": wandb.plot.line(coverages_table, "coverage", "acc",
-                                                               title=f"Test Coverage")}, commit=False)
-
-    for conf in args.eval_confidence_threshold:
-        test_acc, test_loss, num_predictions = evaluate_with_threshold(confidences, predictions, losses, confidence_threshold=conf)
-        wandb.log({f"test_{conf}/acc": test_acc,
-                   f"test{conf}/loss": valid_loss,
-                   f"test_{conf}/num_predictions": num_predictions,
-                   f"test_{conf}/perc_predictions": 100 * (num_predictions / float(len(valid_dataset)))},
-                  commit=False)
-
-    calibration = evaluate_calibration(confidences, predictions, bins=args.eval_confidence_threshold)
-    wandb.log({"test_calibration": calibration})
-
-
-wandb.finish()
+    wandb.finish()
